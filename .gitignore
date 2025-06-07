@@ -1,0 +1,42 @@
+# Node modules
+node_modules/
+
+# Build output
+dist/
+out/
+build/
+
+# TypeScript
+*.tsbuildinfo
+
+# Environment variables
+.env
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# pnpm
+pnpm-lock.yaml
+
+# Coverage
+test/coverage/
+coverage/
+coverage.json
+
+# Misc
+*.tgz
+*.bak
+*.tmp 
