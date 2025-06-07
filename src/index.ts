@@ -7,6 +7,14 @@
  * (c) SquadSafe, 2025. All rights reserved.
  */
 
-// TODO: Implement agent initialization and main event loop
+import { SquadSafeAgent } from "./agents/squadSafeAgent";
 
-console.log("SquadSafe Agent starting...");
+(async () => {
+  try {
+    const agent = new SquadSafeAgent();
+    await agent.start();
+  } catch (error) {
+    console.error("Fatal error starting SquadSafeAgent:", error);
+    process.exit(1);
+  }
+})();
