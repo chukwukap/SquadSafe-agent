@@ -10,11 +10,14 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@xmtp/xmtp-js": "^13.0.4",
-    "agentkit": "^0.0.0",
+    "@coinbase/agentkit": "^0.8.0",
+    "@coinbase/agentkit-langchain": "^0.3.0",
+    "@langchain/core": "^0.3.57",
+    "@langchain/langgraph": "^0.3.1",
+    "@langchain/openai": "^0.5.12",
+    "@xmtp/node-sdk": "^2.1.0",
     "dotenv": "^16.5.0",
-    "ethers": "^6.14.3",
-    "onchainkit": "^0.0.1"
+    "ethers": "^6.14.3"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
