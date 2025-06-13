@@ -40,13 +40,13 @@ import {
 } from "@xmtp/node-sdk";
 
 import { SquadSafeMessage, MessageType } from "./types/message";
-import { getSquadSafeVaultContract } from "./utils/contract";
+import { squadSafeActionProvider } from "./agentkit/squadSafeActionProvider";
 
 // =========================
 // Environment & Constants
 // =========================
 const {
-  WALLET_KEY,
+  WALLET_PRIVATE_KEY,
   ENCRYPTION_KEY,
   XMTP_ENV,
   CDP_API_KEY_ID,
@@ -54,7 +54,7 @@ const {
   NETWORK_ID,
   SQUADSAFE_VAULT_ADDRESS, // Add this to your .env for contract address
 } = validateEnvironment([
-  "WALLET_KEY",
+  "WALLET_PRIVATE_KEY",
   "ENCRYPTION_KEY",
   "XMTP_ENV",
   "CDP_API_KEY_ID",
@@ -114,7 +114,7 @@ function getWalletData(userId: string): string | null {
 // XMTP & Agent Initialization
 // =========================
 async function initializeXmtpClient() {
-  const signer = createSigner(WALLET_KEY);
+  const signer = createSigner(WALLET_PRIVATE_KEY);
   const dbEncryptionKey = getEncryptionKeyFromHex(ENCRYPTION_KEY);
   const identifier = await signer.getIdentifier();
   const address = identifier.identifier;
@@ -139,47 +139,95 @@ async function initializeXmtpClient() {
 async function initializeAgent(
   userId: string
 ): Promise<{ agent: Agent; config: AgentConfig }> {
-  const llm = new ChatOpenAI({ model: "gpt-4.1-mini" });
-  const storedWalletData = getWalletData(userId);
-  const config = {
-    apiKeyId: CDP_API_KEY_ID,
-    apiKeyPrivateKey: CDP_API_KEY_SECRET.replace(/\n/g, "\n"),
-    cdpWalletData: storedWalletData || undefined,
-    networkId: NETWORK_ID || "base-sepolia",
-  };
-  const walletProvider = await CdpWalletProvider.configureWithWallet(config);
-  const agentkit = await AgentKit.from({
-    walletProvider,
-    actionProviders: [
-      walletActionProvider(),
-      erc20ActionProvider(),
-      cdpApiActionProvider({
-        apiKeyId: CDP_API_KEY_ID,
-        apiKeySecret: CDP_API_KEY_SECRET.replace(/\n/g, "\n"),
-      }),
-      cdpWalletActionProvider({
-        apiKeyId: CDP_API_KEY_ID,
-        apiKeySecret: CDP_API_KEY_SECRET.replace(/\n/g, "\n"),
-      }),
-    ],
-  });
-  const tools = await getLangChainTools(agentkit);
-  memoryStore[userId] = new MemorySaver();
-  const agentConfig: AgentConfig = { configurable: { thread_id: userId } };
-  const agent = createReactAgent({
-    llm,
-    tools,
-    checkpointSaver: memoryStore[userId],
-    messageModifier: `
-      You are SquadSafe, an AI agent for onchain group vaults and collective finance. You help squads, DAOs, and communities manage shared funds, proposals, voting, and execution on Base L2, all via secure XMTP messaging.
-      Only act on valid, well-formed requests. Always verify group membership and permissions before taking action. Never log or expose sensitive data.
-    `,
-  });
-  agentStore[userId] = agent;
-  const exportedWallet = await walletProvider.exportWallet();
-  const walletDataJson = JSON.stringify(exportedWallet);
-  saveWalletData(userId, walletDataJson);
-  return { agent, config: agentConfig };
+  try {
+    const llm = new ChatOpenAI({
+      model: "gpt-4.1-mini",
+    });
+
+    const storedWalletData = getWalletData(userId);
+    console.log(
+      `Wallet data for ${userId}: ${storedWalletData ? "Found" : "Not found"}`
+    );
+
+    const config = {
+      apiKeyId: CDP_API_KEY_ID,
+      apiKeyPrivateKey: CDP_API_KEY_SECRET.replace(/\\n/g, "\n"),
+      cdpWalletData: storedWalletData || undefined,
+      networkId: NETWORK_ID || "base-sepolia",
+    };
+
+    const walletProvider = await CdpWalletProvider.configureWithWallet(config);
+
+    const agentkit = await AgentKit.from({
+      walletProvider,
+      actionProviders: [
+        walletActionProvider(),
+        erc20ActionProvider(),
+        squadSafeActionProvider({
+          contractAddress: SQUADSAFE_VAULT_ADDRESS,
+          signer,
+        }),
+        cdpApiActionProvider({
+          apiKeyId: CDP_API_KEY_ID,
+          apiKeySecret: CDP_API_KEY_SECRET.replace(/\\n/g, "\n"),
+        }),
+        cdpWalletActionProvider({
+          apiKeyId: CDP_API_KEY_ID,
+          apiKeySecret: CDP_API_KEY_SECRET.replace(/\\n/g, "\n"),
+        }),
+      ],
+    });
+
+    const tools = await getLangChainTools(agentkit);
+
+    memoryStore[userId] = new MemorySaver();
+
+    const agentConfig: AgentConfig = {
+      configurable: { thread_id: userId },
+    };
+
+    const agent = createReactAgent({
+      llm,
+      tools,
+      checkpointSaver: memoryStore[userId],
+      messageModifier: `
+        You are SquadSafe, an onchain group vault and programmable social finance agent for squads, DAOs, and communities.
+        Your mission is to help groups securely manage shared funds, coordinate proposals, and execute collective decisions onchain.
+
+        Core Capabilities:
+        1. Create and manage group vaults for secure, multi-signature fund storage on Base L2.
+        2. Facilitate proposals (e.g., payments, investments, withdrawals) and coordinate group voting.
+        3. Execute approved actions onchain, ensuring transparency and security for all members.
+        4. Provide real-time updates, analytics, and AI-powered suggestions to help groups operate efficiently.
+        5. All interactions are conducted via secure, private XMTP messaging.
+
+        How to interact:
+        - Users can ask you to create a new vault, propose a transaction, vote on proposals, check vault balances, or execute approved actions.
+        - Always verify the user's group membership and permissions before taking any action.
+        - For sensitive actions (e.g., fund transfers), require group consensus according to the vault's rules.
+        - If a user requests something outside your scope (e.g., non-financial tasks), politely explain your specialization.
+
+        Security & Best Practices:
+        - Never share private keys or sensitive data.
+        - Always confirm actions with users and log all onchain transactions for transparency.
+        - Default network is Base L2. All vault operations use USDC (token address: 0x036CbD53842c5426634e7929541eC2318f3dCF7e).
+
+        Be concise, helpful, and security-focused in all your interactions. You are the trusted group finance agent for the onchain era.
+      `,
+    });
+
+    agentStore[userId] = agent;
+
+    // Export and persist wallet data securely
+    const exportedWallet = await walletProvider.exportWallet();
+    const walletDataJson = JSON.stringify(exportedWallet);
+    saveWalletData(userId, walletDataJson);
+
+    return { agent, config: agentConfig };
+  } catch (error) {
+    console.error("Failed to initialize agent:", error);
+    throw error;
+  }
 }
 
 // =========================
