@@ -41,6 +41,7 @@ import {
 
 import { SquadSafeMessage, MessageType } from "./types/message";
 import { squadSafeActionProvider } from "./agentkit/squadSafeActionProvider";
+import { ethers } from "ethers";
 
 // =========================
 // Environment & Constants
@@ -151,29 +152,34 @@ async function initializeAgent(
 
     const config = {
       apiKeyId: CDP_API_KEY_ID,
-      apiKeyPrivateKey: CDP_API_KEY_SECRET.replace(/\\n/g, "\n"),
+      apiKeyPrivateKey: CDP_API_KEY_SECRET.replace(/\n/g, "\n"),
       cdpWalletData: storedWalletData || undefined,
       networkId: NETWORK_ID || "base-sepolia",
     };
 
     const walletProvider = await CdpWalletProvider.configureWithWallet(config);
 
+    // Create an ethers.js Wallet signer for contract actions
+    const agentSigner = new ethers.Wallet(WALLET_PRIVATE_KEY);
+
+    // Initialize AgentKit with built-in and custom action providers
     const agentkit = await AgentKit.from({
       walletProvider,
       actionProviders: [
         walletActionProvider(),
         erc20ActionProvider(),
-        squadSafeActionProvider({
-          contractAddress: SQUADSAFE_VAULT_ADDRESS,
-          signer,
-        }),
         cdpApiActionProvider({
           apiKeyId: CDP_API_KEY_ID,
-          apiKeySecret: CDP_API_KEY_SECRET.replace(/\\n/g, "\n"),
+          apiKeySecret: CDP_API_KEY_SECRET.replace(/\n/g, "\n"),
         }),
         cdpWalletActionProvider({
           apiKeyId: CDP_API_KEY_ID,
-          apiKeySecret: CDP_API_KEY_SECRET.replace(/\\n/g, "\n"),
+          apiKeySecret: CDP_API_KEY_SECRET.replace(/\n/g, "\n"),
+        }),
+        // Custom SquadSafeVault action provider for group vault logic
+        squadSafeActionProvider({
+          contractAddress: SQUADSAFE_VAULT_ADDRESS,
+          signer: agentSigner,
         }),
       ],
     });
