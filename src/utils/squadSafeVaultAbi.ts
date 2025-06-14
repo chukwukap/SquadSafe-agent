@@ -8,7 +8,6 @@ export const squadSafeVaultAbi = [
   {
     type: "constructor",
     inputs: [
-      { name: "_members", type: "address[]", internalType: "address[]" },
       { name: "_minVotes", type: "uint256", internalType: "uint256" },
       { name: "initialOwner", type: "address", internalType: "address" },
     ],
@@ -152,6 +151,20 @@ export const squadSafeVaultAbi = [
     inputs: [],
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
     stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "addMember",
+    inputs: [{ name: "newMember", type: "address", internalType: "address" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "removeMember",
+    inputs: [{ name: "member", type: "address", internalType: "address" }],
+    outputs: [],
+    stateMutability: "nonpayable",
   },
   {
     type: "event",

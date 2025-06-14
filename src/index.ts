@@ -292,11 +292,13 @@ async function handleMessage(message: DecodedMessage, client: Client) {
     conversation = (await client.conversations.getConversationById(
       message.conversationId
     )) as Conversation | null;
+
     if (!conversation) {
       throw new Error(
         `Could not find conversation for ID: ${message.conversationId}`
       );
     }
+
     await conversation.send(response);
     console.debug(`Sent response to ${senderAddress}: ${response}`);
   } catch (error) {

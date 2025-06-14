@@ -1,7 +1,7 @@
 import { z } from "zod";
 import {
   ActionProvider,
-  WalletProvider,
+  CdpWalletProvider,
   Network,
   CreateAction,
 } from "@coinbase/agentkit";
@@ -10,17 +10,12 @@ import { squadSafeVaultAbi } from "./utils/squadSafeVaultAbi"; // Ensure this pa
 
 /**
  * Zod schemas for SquadSafe actions
- *
- * NOTE: To satisfy the type requirements of AgentKit's CreateAction decorator,
- * we use ZodType<any, any, any> as a cast. However, this can cause
- * "Type instantiation is excessively deep and possibly infinite" errors
- * in some TypeScript versions. To avoid this, we use plain z.object schemas
- * and cast only at the decorator site, not at the schema declaration.
  */
-const CreateProposalSchema = z.object({
-  description: z.string(),
+const ProposeSchema = z.object({
+  token: z.string(),
   amount: z.union([z.string(), z.number()]),
-  recipient: z.string(),
+  to: z.string(),
+  reason: z.string(),
 });
 
 const VoteOnProposalSchema = z.object({
@@ -32,6 +27,22 @@ const ExecuteProposalSchema = z.object({
   proposalId: z.union([z.string(), z.number()]),
 });
 
+const AddMemberSchema = z.object({
+  newMember: z.string(),
+});
+
+const RemoveMemberSchema = z.object({
+  member: z.string(),
+});
+
+const SetMinVotesSchema = z.object({
+  minVotes: z.union([z.string(), z.number()]),
+});
+
+const SetVotingPeriodSchema = z.object({
+  period: z.union([z.string(), z.number()]),
+});
+
 /**
  * SquadSafeActionProvider
  *
@@ -41,7 +52,7 @@ const ExecuteProposalSchema = z.object({
  * SECURITY: All inputs must be validated. Never expose sensitive data.
  * (c) SquadSafe, 2025. All rights reserved.
  */
-class SquadSafeActionProvider extends ActionProvider<WalletProvider> {
+class SquadSafeActionProvider extends ActionProvider<CdpWalletProvider> {
   // The contract address should be provided via environment variable or config
   private readonly contractAddress: `0x${string}`;
 
@@ -59,21 +70,25 @@ class SquadSafeActionProvider extends ActionProvider<WalletProvider> {
    * SECURITY: Validates all inputs.
    */
   @CreateAction({
-    name: "createProposal",
+    name: "propose",
     description: "Create a new proposal in the group vault.",
-    // Cast here to avoid deep type instantiation at schema declaration
-    schema: CreateProposalSchema as any,
+    schema: ProposeSchema,
   })
-  async createProposal(
-    walletProvider: WalletProvider,
-    args: z.infer<typeof CreateProposalSchema>
+  async propose(
+    walletProvider: CdpWalletProvider,
+    args: z.infer<typeof ProposeSchema>
   ): Promise<{ success: boolean; txHash: string }> {
-    const { description, amount, recipient } = args;
+    const { token, amount, to, reason } = args;
 
-    // SECURITY: Validate recipient address and amount
-    if (!isAddress(recipient)) {
+    // SECURITY: Validate token and recipient address
+    if (!isAddress(token)) {
+      throw new Error("Invalid token address");
+    }
+    if (!isAddress(to)) {
       throw new Error("Invalid recipient address");
     }
+
+    // SECURITY: Validate amount
     if (Number(amount) <= 0) {
       throw new Error("Amount must be positive");
     }
@@ -82,23 +97,19 @@ class SquadSafeActionProvider extends ActionProvider<WalletProvider> {
     const parsedAmount =
       typeof amount === "string" ? parseEther(amount) : BigInt(amount);
 
-    // Encode the function call data for the createProposal function
+    // Encode the function call data for the propose function
     const data = encodeFunctionData({
       abi: squadSafeVaultAbi,
-      functionName: "createProposal",
-      args: [description, parsedAmount, recipient],
+      functionName: "propose",
+      args: [token, parsedAmount, to, reason],
     });
 
-    // SECURITY: Always check that the WalletProvider supports sendTransaction
-    if (typeof (walletProvider as any).sendTransaction !== "function") {
-      throw new Error("WalletProvider does not support sendTransaction");
-    }
+    // Use BigInt(0) for value to match TransactionRequest type and avoid BigInt literal for ES2019 compatibility
+    const zeroValue = BigInt(0);
 
-    // Use 0 as value for contract call (no ETH sent)
-    // Use Number(0) instead of 0n for compatibility with ES2019 and below
-    const txHash = await (walletProvider as any).sendTransaction({
+    const txHash = await walletProvider.sendTransaction({
       to: this.contractAddress,
-      value: 0,
+      value: zeroValue,
       data,
     });
 
@@ -112,10 +123,10 @@ class SquadSafeActionProvider extends ActionProvider<WalletProvider> {
   @CreateAction({
     name: "voteOnProposal",
     description: "Vote on an existing proposal.",
-    schema: VoteOnProposalSchema as any,
+    schema: VoteOnProposalSchema,
   })
   async voteOnProposal(
-    walletProvider: WalletProvider,
+    walletProvider: CdpWalletProvider,
     args: z.infer<typeof VoteOnProposalSchema>
   ): Promise<{ success: boolean; txHash: string }> {
     const { proposalId, support } = args;
@@ -132,13 +143,12 @@ class SquadSafeActionProvider extends ActionProvider<WalletProvider> {
       args: [proposalId, support],
     });
 
-    if (typeof (walletProvider as any).sendTransaction !== "function") {
-      throw new Error("WalletProvider does not support sendTransaction");
-    }
+    // Use BigInt(0) for value to match TransactionRequest type and avoid BigInt literal for ES2019 compatibility
+    const zeroValue = BigInt(0);
 
-    const txHash = await (walletProvider as any).sendTransaction({
+    const txHash = await walletProvider.sendTransaction({
       to: this.contractAddress,
-      value: 0,
+      value: zeroValue,
       data,
     });
 
@@ -152,10 +162,10 @@ class SquadSafeActionProvider extends ActionProvider<WalletProvider> {
   @CreateAction({
     name: "executeProposal",
     description: "Execute an approved proposal.",
-    schema: ExecuteProposalSchema as any,
+    schema: ExecuteProposalSchema,
   })
   async executeProposal(
-    walletProvider: WalletProvider,
+    walletProvider: CdpWalletProvider,
     args: z.infer<typeof ExecuteProposalSchema>
   ): Promise<{ success: boolean; txHash: string }> {
     const { proposalId } = args;
@@ -172,16 +182,112 @@ class SquadSafeActionProvider extends ActionProvider<WalletProvider> {
       args: [proposalId],
     });
 
-    if (typeof (walletProvider as any).sendTransaction !== "function") {
-      throw new Error("WalletProvider does not support sendTransaction");
-    }
+    // Use BigInt(0) for value to match TransactionRequest type and avoid BigInt literal for ES2019 compatibility
+    const zeroValue = BigInt(0);
 
-    const txHash = await (walletProvider as any).sendTransaction({
+    const txHash = await walletProvider.sendTransaction({
       to: this.contractAddress,
-      value: 0,
+      value: zeroValue,
       data,
     });
 
+    return { success: true, txHash };
+  }
+
+  @CreateAction({
+    name: "addMember",
+    description: "Add a new member to the group vault (owner only).",
+    schema: AddMemberSchema,
+  })
+  async addMember(
+    walletProvider: CdpWalletProvider,
+    args: z.infer<typeof AddMemberSchema>
+  ) {
+    const { newMember } = args;
+    if (!isAddress(newMember)) throw new Error("Invalid member address");
+    const data = encodeFunctionData({
+      abi: squadSafeVaultAbi,
+      functionName: "addMember",
+      args: [newMember],
+    });
+    const txHash = await walletProvider.sendTransaction({
+      to: this.contractAddress,
+      value: BigInt(0),
+      data,
+    });
+    return { success: true, txHash };
+  }
+
+  @CreateAction({
+    name: "removeMember",
+    description: "Remove a member from the group vault (owner only).",
+    schema: RemoveMemberSchema,
+  })
+  async removeMember(
+    walletProvider: CdpWalletProvider,
+    args: z.infer<typeof RemoveMemberSchema>
+  ) {
+    const { member } = args;
+    if (!isAddress(member)) throw new Error("Invalid member address");
+    const data = encodeFunctionData({
+      abi: squadSafeVaultAbi,
+      functionName: "removeMember",
+      args: [member],
+    });
+    const txHash = await walletProvider.sendTransaction({
+      to: this.contractAddress,
+      value: BigInt(0),
+      data,
+    });
+    return { success: true, txHash };
+  }
+
+  @CreateAction({
+    name: "setMinVotes",
+    description:
+      "Set the minimum votes required for proposal execution (owner only).",
+    schema: SetMinVotesSchema,
+  })
+  async setMinVotes(
+    walletProvider: CdpWalletProvider,
+    args: z.infer<typeof SetMinVotesSchema>
+  ) {
+    const { minVotes } = args;
+    if (Number(minVotes) <= 0) throw new Error("minVotes must be positive");
+    const data = encodeFunctionData({
+      abi: squadSafeVaultAbi,
+      functionName: "setMinVotes",
+      args: [minVotes],
+    });
+    const txHash = await walletProvider.sendTransaction({
+      to: this.contractAddress,
+      value: BigInt(0),
+      data,
+    });
+    return { success: true, txHash };
+  }
+
+  @CreateAction({
+    name: "setVotingPeriod",
+    description: "Set the voting period for proposals (owner only).",
+    schema: SetVotingPeriodSchema,
+  })
+  async setVotingPeriod(
+    walletProvider: CdpWalletProvider,
+    args: z.infer<typeof SetVotingPeriodSchema>
+  ) {
+    const { period } = args;
+    if (Number(period) <= 0) throw new Error("period must be positive");
+    const data = encodeFunctionData({
+      abi: squadSafeVaultAbi,
+      functionName: "setVotingPeriod",
+      args: [period],
+    });
+    const txHash = await walletProvider.sendTransaction({
+      to: this.contractAddress,
+      value: BigInt(0),
+      data,
+    });
     return { success: true, txHash };
   }
 
