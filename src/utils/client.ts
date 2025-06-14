@@ -2,7 +2,6 @@ import { getRandomValues } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { IdentifierKind, type Client, type Signer } from "@xmtp/node-sdk";
-import { fromString, toString } from "uint8arrays";
 import { createWalletClient, http, toBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
@@ -50,10 +49,8 @@ export const createSigner = (key: string): Signer => {
  * @returns The encryption key
  */
 export const generateEncryptionKeyHex = () => {
-  /* Generate a random encryption key */
   const uint8Array = getRandomValues(new Uint8Array(32));
-  /* Convert the encryption key to a hex string */
-  return toString(uint8Array, "hex");
+  return Buffer.from(uint8Array).toString("hex");
 };
 
 /**
@@ -62,8 +59,7 @@ export const generateEncryptionKeyHex = () => {
  * @returns The encryption key
  */
 export const getEncryptionKeyFromHex = (hex: string) => {
-  /* Convert the hex string to an encryption key */
-  return fromString(hex, "hex");
+  return Uint8Array.from(Buffer.from(hex, "hex"));
 };
 
 export const getDbPath = (description: string = "xmtp") => {
