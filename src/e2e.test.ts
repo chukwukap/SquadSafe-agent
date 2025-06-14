@@ -17,11 +17,13 @@ const RPC_URL = process.env.RPC_URL || "http://127.0.0.1:8545";
 const VAULT_ADDRESS = (
   process.env.SQUADSAFE_VAULT_ADDRESS || ""
 ).toLowerCase() as `0x${string}`;
+
 const OWNER_KEY = (process.env.PRIVATE_KEY ||
   "0x59c6995e998f97a5a004497e5daefef1744b7fa5e5c54f89b6b7c3c0cfb1b5c9") as `0x${string}`; // Anvil default
+console.log("OWNER_KEY:", OWNER_KEY);
 const MEMBER1_KEY = (process.env.MEMBER1_KEY ||
   "0x8b3a350cf5c34c9194ca3a545d8c2a0a6a548820") as `0x${string}`; // Anvil default 2nd
-
+console.log("MEMBER1_KEY:", MEMBER1_KEY);
 if (!VAULT_ADDRESS)
   throw new Error("SQUADSAFE_VAULT_ADDRESS must be set in .env");
 
