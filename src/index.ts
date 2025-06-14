@@ -31,6 +31,7 @@ import { HumanMessage } from "@langchain/core/messages";
 import { MemorySaver } from "@langchain/langgraph";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { ChatOpenAI } from "@langchain/openai";
+import { squadSafeActionProvider } from "./squadSafeActionProvider";
 
 import {
   Client,
@@ -38,10 +39,6 @@ import {
   type DecodedMessage,
   type XmtpEnv,
 } from "@xmtp/node-sdk";
-
-import { SquadSafeMessage, MessageType } from "./types/message";
-import { squadSafeActionProvider } from "./agentkit/squadSafeActionProvider";
-import { ethers } from "ethers";
 
 // =========================
 // Environment & Constants
@@ -152,34 +149,26 @@ async function initializeAgent(
 
     const config = {
       apiKeyId: CDP_API_KEY_ID,
-      apiKeyPrivateKey: CDP_API_KEY_SECRET.replace(/\n/g, "\n"),
+      apiKeyPrivateKey: CDP_API_KEY_SECRET.replace(/\\n/g, "\n"),
       cdpWalletData: storedWalletData || undefined,
       networkId: NETWORK_ID || "base-sepolia",
     };
 
     const walletProvider = await CdpWalletProvider.configureWithWallet(config);
 
-    // Create an ethers.js Wallet signer for contract actions
-    const agentSigner = new ethers.Wallet(WALLET_PRIVATE_KEY);
-
-    // Initialize AgentKit with built-in and custom action providers
     const agentkit = await AgentKit.from({
       walletProvider,
       actionProviders: [
         walletActionProvider(),
+        squadSafeActionProvider(),
         erc20ActionProvider(),
         cdpApiActionProvider({
           apiKeyId: CDP_API_KEY_ID,
-          apiKeySecret: CDP_API_KEY_SECRET.replace(/\n/g, "\n"),
+          apiKeySecret: CDP_API_KEY_SECRET.replace(/\\n/g, "\n"),
         }),
         cdpWalletActionProvider({
           apiKeyId: CDP_API_KEY_ID,
-          apiKeySecret: CDP_API_KEY_SECRET.replace(/\n/g, "\n"),
-        }),
-        // Custom SquadSafeVault action provider for group vault logic
-        squadSafeActionProvider({
-          contractAddress: SQUADSAFE_VAULT_ADDRESS,
-          signer: agentSigner,
+          apiKeySecret: CDP_API_KEY_SECRET.replace(/\\n/g, "\n"),
         }),
       ],
     });
@@ -236,86 +225,80 @@ async function initializeAgent(
   }
 }
 
-// =========================
-// Message Handling Logic
-// =========================
-async function handleSquadSafeMessage(
-  msg: SquadSafeMessage,
-  convo: Conversation,
-  client: Client
-) {
-  switch (msg.type) {
-    case "proposal":
-      await handleProposal(msg, convo, client);
-      break;
-    case "vote":
-      await handleVote(msg, convo, client);
-      break;
-    case "execution":
-      await handleExecution(msg, convo, client);
-      break;
-    case "info":
-    default:
-      await convo.send(
-        "Unrecognized or info message. Please use a valid SquadSafe command."
-      );
+/**
+ * Process a message with the agent and return the response.
+ * @param agent - The agent instance
+ * @param config - The agent configuration
+ * @param message - The message to process
+ * @returns The processed response as a string
+ */
+async function processMessage(
+  agent: Agent,
+  config: AgentConfig,
+  message: string
+): Promise<string> {
+  let response = "";
+
+  try {
+    const stream = await agent.stream(
+      { messages: [new HumanMessage(message)] },
+      config
+    );
+
+    for await (const chunk of stream) {
+      if (chunk && typeof chunk === "object" && "agent" in chunk) {
+        const agentChunk = chunk as {
+          agent: { messages: Array<{ content: unknown }> };
+        };
+        response += String(agentChunk.agent.messages[0].content) + "\n";
+      }
+    }
+
+    return response.trim();
+  } catch (error) {
+    console.error("Error processing message:", error);
+    return "Sorry, I encountered an error while processing your request. Please try again later.";
   }
 }
 
-async function handleProposal(
-  msg: SquadSafeMessage,
-  convo: Conversation,
-  client: Client
-) {
-  // TODO: Implement proposal creation logic, validate sender, store proposal, notify group
-  await convo.send(`Proposal received: ${msg.content}`);
-}
-async function handleVote(
-  msg: SquadSafeMessage,
-  convo: Conversation,
-  client: Client
-) {
-  // TODO: Implement voting logic, validate sender, update proposal state, notify group
-  await convo.send(
-    `Vote received: ${msg.vote ? "Yes" : "No"} for proposal ${msg.proposalId}`
-  );
-}
-async function handleExecution(
-  msg: SquadSafeMessage,
-  convo: Conversation,
-  client: Client
-) {
-  // TODO: Implement execution logic, interact with contract, confirm onchain action
-  await convo.send(`Execution request received for proposal ${msg.proposalId}`);
-}
-
-// =========================
-// XMTP Message Listener
-// =========================
+/**
+ * Handle incoming XMTP messages and respond using the agent.
+ * @param message - The decoded XMTP message
+ * @param client - The XMTP client instance
+ */
 async function handleMessage(message: DecodedMessage, client: Client) {
   let conversation: Conversation | null = null;
   try {
-    const senderInboxId = message.senderInboxId;
-    const botInboxId = client.inboxId.toLowerCase();
-    if (senderInboxId.toLowerCase() === botInboxId) return; // Ignore self
+    const senderAddress = message.senderInboxId;
+    const botAddress = client.inboxId.toLowerCase();
+
+    // Ignore messages from the bot itself
+    if (senderAddress.toLowerCase() === botAddress) {
+      return;
+    }
+
+    console.log(
+      `Received message from ${senderAddress}: ${message.content as string}`
+    );
+
+    const { agent, config } = await initializeAgent(senderAddress);
+    const response = await processMessage(
+      agent,
+      config,
+      String(message.content)
+    );
+
+    // Get the conversation and send response
     conversation = (await client.conversations.getConversationById(
       message.conversationId
     )) as Conversation | null;
-    if (!conversation)
+    if (!conversation) {
       throw new Error(
         `Could not find conversation for ID: ${message.conversationId}`
       );
-    // Parse and validate SquadSafeMessage
-    let squadMsg: SquadSafeMessage;
-    try {
-      squadMsg = JSON.parse(String(message.content));
-    } catch {
-      await conversation.send(
-        "Invalid message format. Please send a valid SquadSafe command."
-      );
-      return;
     }
-    await handleSquadSafeMessage(squadMsg, conversation, client);
+    await conversation.send(response);
+    console.debug(`Sent response to ${senderAddress}: ${response}`);
   } catch (error) {
     console.error("Error handling message:", error);
     if (conversation) {
@@ -326,6 +309,10 @@ async function handleMessage(message: DecodedMessage, client: Client) {
   }
 }
 
+/**
+ * Start listening for XMTP messages and handle them as they arrive.
+ * @param client - The XMTP client instance
+ */
 async function startMessageListener(client: Client) {
   console.log("Starting message listener...");
   const stream = await client.conversations.streamAllMessages();
@@ -336,23 +323,16 @@ async function startMessageListener(client: Client) {
   }
 }
 
-// =========================
-// Main Entrypoint
-// =========================
-export async function main(): Promise<void> {
+/**
+ * Main function to start the SquadSafe agent chatbot.
+ */
+async function main(): Promise<void> {
   console.log("Initializing SquadSafe Agent on XMTP...");
+
   ensureLocalStorage();
+
   const xmtpClient = await initializeXmtpClient();
   await startMessageListener(xmtpClient);
 }
-
-// If run directly, start the agent
-if (require.main === module) {
-  main().catch((err) => {
-    console.error(
-      "Fatal error starting SquadSafe Agent:",
-      err instanceof Error ? err.message : err
-    );
-    process.exit(1);
-  });
-}
+// Start the SquadSafe agent chatbot
+main().catch(console.error);
