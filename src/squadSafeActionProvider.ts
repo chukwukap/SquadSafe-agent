@@ -71,7 +71,8 @@ class SquadSafeActionProvider extends ActionProvider<CdpWalletProvider> {
    */
   @CreateAction({
     name: "propose",
-    description: "Create a new proposal in the group vault.",
+    description:
+      "Create a new group proposal (e.g., payment, investment, withdrawal). Only group members can propose. Specify token, amount, recipient, and reason. Proposal will require group voting before execution.",
     schema: ProposeSchema,
   })
   async propose(
@@ -122,7 +123,8 @@ class SquadSafeActionProvider extends ActionProvider<CdpWalletProvider> {
    */
   @CreateAction({
     name: "voteOnProposal",
-    description: "Vote on an existing proposal.",
+    description:
+      "Vote for or against an active proposal. Only group members can vote. Each member can vote once per proposal. Majority or configured threshold required for execution.",
     schema: VoteOnProposalSchema,
   })
   async voteOnProposal(
@@ -161,7 +163,8 @@ class SquadSafeActionProvider extends ActionProvider<CdpWalletProvider> {
    */
   @CreateAction({
     name: "executeProposal",
-    description: "Execute an approved proposal.",
+    description:
+      "Execute a proposal that has met the required votes and passed its voting period. Only group members can execute. This will transfer funds or perform the proposed action onchain.",
     schema: ExecuteProposalSchema,
   })
   async executeProposal(
@@ -196,7 +199,8 @@ class SquadSafeActionProvider extends ActionProvider<CdpWalletProvider> {
 
   @CreateAction({
     name: "addMember",
-    description: "Add a new member to the group vault (owner only).",
+    description:
+      "Add a new member to the group vault. Only the contract owner (admin) can add members. New members can participate in proposals and voting.",
     schema: AddMemberSchema,
   })
   async addMember(
@@ -220,7 +224,8 @@ class SquadSafeActionProvider extends ActionProvider<CdpWalletProvider> {
 
   @CreateAction({
     name: "removeMember",
-    description: "Remove a member from the group vault (owner only).",
+    description:
+      "Remove an existing member from the group vault. Only the contract owner (admin) can remove members. Cannot remove the last member.",
     schema: RemoveMemberSchema,
   })
   async removeMember(
@@ -245,7 +250,7 @@ class SquadSafeActionProvider extends ActionProvider<CdpWalletProvider> {
   @CreateAction({
     name: "setMinVotes",
     description:
-      "Set the minimum votes required for proposal execution (owner only).",
+      "Set the minimum number of votes required for a proposal to pass. Only the contract owner (admin) can change this. Used for group governance and security.",
     schema: SetMinVotesSchema,
   })
   async setMinVotes(
@@ -269,7 +274,8 @@ class SquadSafeActionProvider extends ActionProvider<CdpWalletProvider> {
 
   @CreateAction({
     name: "setVotingPeriod",
-    description: "Set the voting period for proposals (owner only).",
+    description:
+      "Set the voting period (in seconds) for proposals. Only the contract owner (admin) can change this. Controls how long members have to vote on proposals.",
     schema: SetVotingPeriodSchema,
   })
   async setVotingPeriod(
