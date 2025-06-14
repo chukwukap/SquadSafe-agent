@@ -27,6 +27,7 @@ export const createUser = (key: string): User => {
 
 export const createSigner = (key: string): Signer => {
   const sanitizedKey = key.startsWith("0x") ? key : `0x${key}`;
+
   const user = createUser(sanitizedKey);
   return {
     type: "EOA",
